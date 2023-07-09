@@ -92,7 +92,7 @@ def text_to_speech(text):
     AUDIO_ENGINE.say(text)
     AUDIO_ENGINE.runAndWait()
 
-def chatgpt_response(text):
+def chatgpt_response():
     """
     Get response from chatgpt
     """
@@ -111,7 +111,7 @@ def chatgpt_response(text):
 
                 # add assistant response to conversation
                 conversation.append({"role": "assistant", "content": response['choices'][0]['text']})
-                
+
                 return response['choices'][0]['text']
 
         return False
@@ -140,7 +140,7 @@ async def main():
                 # add user prompt to conversation
                 conversation.append({"role": "user", "content": text})
 
-                response = chatgpt_response(conversation)
+                response = chatgpt_response()
 
                 if response:
                     text_to_speech(response)
