@@ -9,8 +9,9 @@ GPT voice assistant
 
 import os
 import openai
-import pyttsx3
+import pyttsx3 # uses system TTS so its fast but not very natural, alternatives are: gTTS, CoquiTTS, larynx, Bark
 import dotenv
+import asyncio
 import speech_recognition as sr
 
 # load environment variables
@@ -19,51 +20,86 @@ dotenv.load_dotenv()
 # set openai api key
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+# keep track of conversation
+conversation = []
+
+# set up conversation
+conversation.append({"role": "system", "content": "You are a helpful voice assistant. You will respond to the user's requests."})
+
 # initialize pyttsx3 audio engine
-audio_engine = pyttsx3.init()
+AUDIO_ENGINE = pyttsx3.init()
+AUDIO_ENGINE.setProperty('rate', 125) # set speech rate
+AUDIO_ENGINE.setProperty('volume', 1.0) # set speech volume
 
-# gpt model
-model = os.getenv("GPT_MODEL")
+# get voices
+voices = AUDIO_ENGINE.getProperty('voices')
 
-# keep track of entire conversation, sp that GPT can respond to it and use context, we can set personality in by setting the first prompt
-conversation_all = "You are voice assistant, your task is to reply to the user's commands.\n\n"
+# set voice
+AUDIO_ENGINE.setProperty('voice', voices[1].id) # female voice, voices[0].id is male
+
+# get gpt model from environment variable
+MODEL = os.getenv("GPT_MODEL")
+
+# create recognizer instance
+recongizer = sr.Recognizer() 
+
+def detect_microphone():
+    """
+    Detect microphone
+    """
+
+    print("Say something to detect microphone ...")
+
+    for device_index in sr.Microphone.list_working_microphones():
+        m = sr.Microphone(device_index=device_index)
+        break
+    else:
+        print("No working microphones found!")
+        exit(1)
 
 def speech_to_text():
     """
     Transcribes speech to text
     """
-    print("Listening...")
-    r = sr.Recognizer()
+    
     with sr.Microphone() as source: # use the default microphone as the audio source
         source.pause_threshold = 1 # seconds of non-speaking audio before a phrase is considered complete
-        audio = r.listen(source, timeout=None, phrase_time_limit=None) # record audio prompt
+        
+        recongizer.adjust_for_ambient_noise(source) # adjust for ambient noise
+        
+        print("Listening...")
+        
+        audio = recongizer.listen(source) # record audio prompt
         try:
-            text = r.recognize_google(audio) # convert speech to text
-            print(text)
+            # convert speech to text
+            text = recongizer.recognize_google(audio, show_all=True)
+            text = text['alternative'][0]['transcript'] # get first transcript
             return text
-        except Exception as e:
-            print(e)
-            return ""
+
+        except sr.UnknownValueError:
+            print('No speech detected')
+
+        except sr.RequestError:
+            print('API was unreachable or unresponsive')
+
+        return ""
 
 def text_to_speech(text):
     """
     Converts text to speech
     """
-    audio_engine.say(text)
-    audio_engine.runAndWait()
+    AUDIO_ENGINE.say(text)
+    AUDIO_ENGINE.runAndWait()
 
 def chatgpt_response(text):
     """
     Get response from chatgpt
     """
     try:
-        response = openai.Completion.create(
-            model=model,
-            prompt=text,
-            temperature=0.5,
-            max_tokens=4000,
-            n=1, # number of responses
-            stop=[" Human:", " AI:"], # stop when one of these strings is reached
+        # get chat response
+        response = openai.ChatCompletion.create(
+            model=MODEL,
+            messages=conversation
         )
 
         # check if valid response
@@ -71,30 +107,39 @@ def chatgpt_response(text):
             # check if response is not empty
             if response['choices'][0]['text'] != "":
                 print('ChatGPT response: ', response['choices'][0]['text'])
-                global conversation_all
-                conversation_all += ' ' + response['choices'][0]['text'] # add response to conversation
+
+                # add assistant response to conversation
+                conversation.append({"role": "assistant", "content": response['choices'][0]['text']})
+                
                 return response['choices'][0]['text']
 
         return False
 
     except Exception as e:
-        print(e)
+        print('Error: ', e)
         return False
 
-def main():
-    print("Say 'Hey GPT' to start the conversation")
+async def main():
+
+    # detect_microphone()
+
+    print("Say 'Hey GPT' to start the conversation ...")
+
     while True: # run in loop
         text = speech_to_text()
+
         if text.lower() == "hey gpt": # use lower case to avoid case sensitivity
+            print("Listening for command ...")
+
             text = speech_to_text() # get command
 
             if text:
                 print("Human: " + text)
 
-                global conversation_all
-                conversation_all += '\nHuman: ' + text + '\nAI:' # add command to conversation and AI start
+                # add user prompt to conversation
+                conversation.append({"role": "user", "content": text})
 
-                response = chatgpt_response(text)
+                response = chatgpt_response(conversation)
 
                 if response:
                     text_to_speech(response)
@@ -102,4 +147,4 @@ def main():
                     text_to_speech("Sorry, I did not get that.")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
