@@ -73,8 +73,9 @@ def speech_to_text():
         try:
             # convert speech to text
             text = recongizer.recognize_google(audio, show_all=True)
-            text = text['alternative'][0]['transcript'] # get first transcript
-            return text
+            if text:
+                text = text['alternative'][0]['transcript'] # get first transcript
+                return text
 
         except sr.UnknownValueError:
             print('No speech detected')
