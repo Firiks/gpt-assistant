@@ -184,6 +184,10 @@ async def main():
 
         print("Text: " + text)
 
+        if text.lower == "delete conversation":
+            delete_conversation()
+            text_to_speech("Conversation deleted.")
+
         if text.lower() == "hey gpt": # use lower case to avoid case sensitivity
             print("Listening for command ...")
 
