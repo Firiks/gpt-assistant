@@ -8,11 +8,13 @@ GPT voice assistant
 """
 
 import os
+import json
 import openai
 import pyttsx3 # uses system TTS so its fast but not very natural, alternatives are: gTTS, CoquiTTS, larynx, Bark
 import dotenv
 import asyncio
 import speech_recognition as sr
+from functions import functions, available_functions
 
 # load environment variables
 dotenv.load_dotenv()
@@ -23,8 +25,11 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 # keep track of conversation
 conversation = []
 
+# setup conversation mode
+conversation_init = {"role": "system", "content": "You are a helpful voice assistant. You will respond to the user's requests."}
+
 # set up conversation
-conversation.append({"role": "system", "content": "You are a helpful voice assistant. You will respond to the user's requests."})
+conversation.append(conversation_init)
 
 # initialize pyttsx3 audio engine
 AUDIO_ENGINE = pyttsx3.init()
@@ -52,6 +57,7 @@ def detect_microphone():
 
     for device_index in sr.Microphone.list_working_microphones():
         m = sr.Microphone(device_index=device_index)
+        print("Microphone with name \"{1}\" found for `Microphone(device_index={0})`".format(device_index, m))
         break
     else:
         print("No working microphones found!")
@@ -61,7 +67,7 @@ def speech_to_text():
     """
     Transcribes speech to text
     """
-    
+
     with sr.Microphone() as source: # use the default microphone as the audio source
         source.pause_threshold = 1 # seconds of non-speaking audio before a phrase is considered complete
         
@@ -70,6 +76,7 @@ def speech_to_text():
         print("Listening...")
         
         audio = recongizer.listen(source) # record audio prompt
+
         try:
             # convert speech to text
             text = recongizer.recognize_google(audio, show_all=True)
@@ -89,45 +96,93 @@ def text_to_speech(text):
     """
     Converts text to speech
     """
+
     AUDIO_ENGINE.say(text)
     AUDIO_ENGINE.runAndWait()
+
+def delete_conversation():
+    """
+    Delete conversation
+    """
+
+    global conversation
+    global conversation_init
+    conversation = []
+    conversation.append(conversation_init)
 
 def chatgpt_response():
     """
     Get response from chatgpt
     """
+
     try:
+
         # get chat response
         response = openai.ChatCompletion.create(
             model=MODEL,
-            messages=conversation
+            messages=conversation,
+            functions=functions,
+            function_call='auto'
         )
 
-        # check if valid response
-        if 'choices' in response and len(response['choices']) > 0:
-            # check if response is not empty
-            if response['choices'][0]['text'] != "":
-                print('ChatGPT response: ', response['choices'][0]['text'])
+        print('ChatGPT response: ', response['choices'][0]['message'])
 
-                # add assistant response to conversation
-                conversation.append({"role": "assistant", "content": response['choices'][0]['text']})
+        response_message = response["choices"][0]["message"]
 
-                return response['choices'][0]['text']
+        # check if function call
+        if response_message.get("function_call"):
 
-        return False
+            function_name = response_message["function_call"]["name"]
+            fuction_to_call = available_functions[function_name]
+            function_args = json.loads(response_message["function_call"]["arguments"])
+
+            function_response = fuction_to_call(
+                **function_args
+            )
+
+            # add assistant response to call the function
+            conversation.append(response_message)
+
+            # extend conversation with function response
+            conversation.append(
+                {
+                    "role": "function",
+                    "name": function_name,
+                    "content": function_response,
+                }
+            )
+
+            # get second response with function response
+            second_response = openai.ChatCompletion.create(
+                model=MODEL,
+                messages=conversation,
+            )
+
+            # assistant response to function response
+            conversation.append({"role": "assistant", "content": second_response['choices'][0]['message']})
+
+            return second_response['choices'][0]['message']
+
+        else:
+            # add assistant response to conversation
+            conversation.append({"role": "assistant", "content": response['choices'][0]['message']})
+
+            return response['choices'][0]['message']
 
     except Exception as e:
         print('Error: ', e)
         return False
 
 async def main():
-
-    # detect_microphone()
+    # uncomment to debug microphone
+    #detect_microphone()
 
     print("Say 'Hey GPT' to start the conversation ...")
 
     while True: # run in loop
         text = speech_to_text()
+
+        print("Text: " + text)
 
         if text.lower() == "hey gpt": # use lower case to avoid case sensitivity
             print("Listening for command ...")

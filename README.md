@@ -1,6 +1,6 @@
 # ChatGPT voice assistant
 
-This is a voice assistant that uses the openAI GPT-2 model to generate responses to user voice commands.
+This is a voice assistant that uses the openAI GPT model to generate responses to user voice commands. You can extend assistant capabilities by adding new functions to functions.py.
 
 -----------
 
